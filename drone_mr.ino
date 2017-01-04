@@ -1,6 +1,9 @@
 #include <Wire.h>                          //Include the Wire.h library so we can communicate with the gyro.
 #include <EEPROM.h>                        //Include the EEPROM.h library so we can store information onto the EEPROM
 #define flightcontroller
+#define enable_serial
+#define gyro_adress 0x68
+#define red_pin 12
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //PID gain and limit settings
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -18,23 +21,37 @@ float pid_p_gain_yaw = 3.0;                //Gain setting for the pitch P-contro
 float pid_i_gain_yaw = 0.02;               //Gain setting for the pitch I-controller. //0.02
 float pid_d_gain_yaw = 0.0;                //Gain setting for the pitch D-controller.
 int pid_max_yaw = 400;                     //Maximum output of the PID-controller (+/-)
+//****************************************************************************************************************
+
+
+
+//****************************************************************************************************************
+//General vars
 int print_out;
+boolean gyro_angles_set;
+unsigned long loop_timer;
+char mydata;                                //Input data var for serial port
+int mode;                                   //Start mode 0 - 1 - 2 - 3
+bool remote_present = true;
+boolean auto_level = true;                  //Auto level on (true) or off (false)
+
+
+
+
+//****************************************************************************************************************
+//PID vars
 float pid_error_temp;
 float pid_i_mem_roll, pid_roll_setpoint, gyro_roll_input, pid_output_roll, pid_last_roll_d_error;
 float pid_i_mem_pitch, pid_pitch_setpoint, gyro_pitch_input, pid_output_pitch, pid_last_pitch_d_error;
 float pid_i_mem_yaw, pid_yaw_setpoint, gyro_yaw_input, pid_output_yaw, pid_last_yaw_d_error;
 float angle_roll_acc, angle_pitch_acc, angle_pitch, angle_roll;
 float roll_level_adjust, pitch_level_adjust;
-boolean gyro_angles_set;
-unsigned long loop_timer;
-char mydata;
-int mode;
-bool remote_present = true;
 
 
 
-boolean auto_level = true;                 //Auto level on (true) or off (false)
 
+//****************************************************************************************************************
+//GYROS (6050 IMU) vars
 int cal_int, start, gyro_address;
 double gyro_pitch, gyro_roll, gyro_yaw;
 double gyro_axis_cal[4];
@@ -44,37 +61,91 @@ int acc_axis[4], gyro_axis[4];
 long gyro_x_cal, gyro_y_cal, gyro_z_cal;
 long acc_x, acc_y, acc_z, acc_total_vector;
 
+
+
+
+//****************************************************************************************************************
+//esc and battery vars
 int throttle, battery_voltage;
 int esc_1, esc_2, esc_3, esc_4;
 
+
+
+
+//****************************************************************************************************************
+//Timer vars
 unsigned long timer_channel_1, timer_channel_2, timer_channel_3, timer_channel_4, esc_timer, esc_loop_timer;
 unsigned long timer_1, timer_2, timer_3, timer_4, current_time;
 
 
+
+
+
+//****************************************************************************************************************
+//RECEIVER vars
 int receiver_input_channel_1, receiver_input_channel_2, receiver_input_channel_3, receiver_input_channel_4;
 int counter_channel_1, counter_channel_2, counter_channel_3, counter_channel_4, loop_counter;
 byte last_channel_1, last_channel_2, last_channel_3, last_channel_4;
 
 
-void setup() {
-  // put your setup code here, to run once:
-mode=0;
 
-Serial.begin(57600);
-gyro_address = 0x68;
-Serial.println("Starting Test bench program");
-readPID(); 
+
+
+
+
+//****************************************************************************************************************
+//Start of program
+
+
+//****************************************************************************************************************
+//Setup section
+#ifdef enable_serial
+void setup_serial(){
+ Serial.begin(57600);
+ Serial.println("Starting Flight controller program"); 
+}
+#endif
+
+
+void setup_mode_and_adress(){
+ mode=0;                                                                    //Setup mode 0 for startup
+ gyro_address = gyro_adress;                                                //Set gyro adress, as defined in top of program
+}
+
+void setup_wire(){
   Wire.begin();                                                             //Start the I2C as master.
-
   TWBR = 12;                                                                //Set the I2C clock speed to 400kHz.
-    //Arduino (Atmega) pins default to inputs, so they don't need to be explicitly declared as inputs.
+}
+
+void setup_configure_pins(){
+  //Arduino (Atmega) pins default to inputs, so they don't need to be explicitly declared as inputs.
   DDRD |= B11110000;                                                        //Configure digital poort 4, 5, 6 and 7 as output.
   DDRB |= B00110000;                                                        //Configure digital poort 12 and 13 as output.
-  digitalWrite(12,HIGH); 
-set_gyro_registers();                                                     //Set the specific gyro registers.
+}
+//end of setup section
+//****************************************************************************************************************
+
+
+
+void setup() {
+  // put your setup code here, to run once:
+
+#ifdef enable_serial
+  setup_serial();
+#endif
+
+  setup_mode_and_adress();
+  readPID();                                                                //Read the eprom
+  setup_mode_and_adress();
+  setup_wire();
+  setup_configure_pins();
+
+  digitalWrite(red_pin,HIGH);                                               //Set red pin high, to indicate that program is starting 
+  set_gyro_registers();                                                     //Set the specific gyro registers.
 
   for (cal_int = 0; cal_int < 1250 ; cal_int ++){                           //Wait 5 seconds before continuing.
-    
+                                                                            //We pulse the ESC to make them stop beeping
+                                                                            //for the IMU to settel
     PORTD |= B11110000;                                                     //Set digital poort 4, 5, 6 and 7 high.
     delayMicroseconds(1000);                                                //Wait 1000us.
     PORTD &= B00001111;                                                     //Set digital poort 4, 5, 6 and 7 low.
