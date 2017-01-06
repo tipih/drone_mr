@@ -11,23 +11,25 @@ void setup() {
   //PB4 = 12
   //PB5 = 13
   //Bit   1312111098
-  DDRB = DDRB | B0110000; //Setting bit 12 and 13 to output
+  DDRB = DDRB | B0100000; //Setting bit 12 and 13 to output
   pinMode(A3,OUTPUT);
+  pinMode(A2,OUTPUT);
 
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
- 
+
+ Serial.println("Flashing pin 12");
  for (int a = 0;a<10;a++){
  delay(time_up);
- PORTB |=B0010000;
+ digitalWrite(A2,HIGH);
 
  delay(time_up);
- PORTB &=B0101111;
+digitalWrite(A2,LOW);
  
  }
-
+Serial.println("Flashing pin 13");
  for (int a = 0;a<10;a++){
  
  delay(time_up);
@@ -37,6 +39,7 @@ void loop() {
  PORTB &=B0011111;
  }
 
+Serial.println("Flashing pin A3");
   for (int a = 0;a<10;a++){
  
  delay(time_up);
