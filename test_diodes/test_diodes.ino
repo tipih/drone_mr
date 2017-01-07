@@ -4,7 +4,7 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
   Serial.println("Starting test program for doide indicatore");
-  Serial.println("Diode connect to Pin12 will flash 10 timer");
+  Serial.println("Diode connect to A2 will flash 10 timer");
   Serial.println("Then Pin13 and then Pin A3");
   //Set pin 12-13 to output;
   //located on Port Register B
