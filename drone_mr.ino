@@ -3,12 +3,12 @@
 #define flightcontroller
 #define enable_serial
 #define gyro_adress 0x68
-#define red_pin 12
+#define red_pin A3
 #define white_pin 13
 #define red_pin_b   B00010000
 #define pin4_5_6_7_on  B11110000
 #define pin4_5_6_7_off B00001111
-#define pin12_13_on    B00110000
+#define pin12_13_on    B00100000
 #define low_throttle 1200
 #define throttle_low_min 990
 #define throttle_low_max 1020
@@ -22,9 +22,9 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //PID gain and limit settings
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-float pid_p_gain_roll = 3;               //Gain setting for the roll P-controller
-float pid_i_gain_roll = 0.02;              //Gain setting for the roll I-controller
-float pid_d_gain_roll = 35;              //Gain setting for the roll D-controller
+float pid_p_gain_roll = 1.3;               //Gain setting for the roll P-controller
+float pid_i_gain_roll = 0.04;              //Gain setting for the roll I-controller
+float pid_d_gain_roll = 18;              //Gain setting for the roll D-controller
 int pid_max_roll = 400;                    //Maximum output of the PID-controller (+/-)
 
 float pid_p_gain_pitch = pid_p_gain_roll;  //Gain setting for the pitch P-controller.
@@ -32,7 +32,7 @@ float pid_i_gain_pitch = pid_i_gain_roll;  //Gain setting for the pitch I-contro
 float pid_d_gain_pitch = pid_d_gain_roll;  //Gain setting for the pitch D-controller.
 int pid_max_pitch = pid_max_roll;          //Maximum output of the PID-controller (+/-)
 
-float pid_p_gain_yaw = 3.0;                //Gain setting for the pitch P-controller. //4.0
+float pid_p_gain_yaw = 4.0;                //Gain setting for the pitch P-controller. //4.0
 float pid_i_gain_yaw = 0.02;               //Gain setting for the pitch I-controller. //0.02
 float pid_d_gain_yaw = 0.0;                //Gain setting for the pitch D-controller.
 int pid_max_yaw = 400;                     //Maximum output of the PID-controller (+/-)
@@ -50,7 +50,7 @@ int mode;                                   //Start mode 0 - 1 - 2 - 3
 byte state; 
 bool remote_present = false;                //Default value for flight controller is set to false, will be redefined if flightcontroller flag is set
 boolean auto_level = true;                  //Auto level on (true) or off (false)
-
+int cnt =0;
 
 
 
@@ -123,7 +123,7 @@ byte last_channel_1, last_channel_2, last_channel_3, last_channel_4;
 //Setup section
 #ifdef enable_serial
 void setup_serial(){
- Serial.begin(57600);
+ Serial.begin(115200);
  Serial.println("Starting Flight controller program"); 
 }
 #endif
@@ -143,6 +143,8 @@ void setup_configure_pins(){
   //Arduino (Atmega) pins default to inputs, so they don't need to be explicitly declared as inputs.
   DDRD |= pin4_5_6_7_on;                                                    //Configure digital port 4, 5, 6 and 7 as output.
   DDRB |= pin12_13_on;                                                      //Configure digital port 12 and 13 as output.
+  pinMode(A3,OUTPUT);
+  pinMode(A2,OUTPUT);
 }
 
 
@@ -152,7 +154,7 @@ void setup_pin_interrupt(){
   PCMSK0 |= (1 << PCINT0);                                                  //Set PCINT0 (digital input 8) to trigger an interrupt on state change.
   PCMSK0 |= (1 << PCINT1);                                                  //Set PCINT1 (digital input 9)to trigger an interrupt on state change.
   PCMSK0 |= (1 << PCINT2);                                                  //Set PCINT2 (digital input 10)to trigger an interrupt on state change.
-  PCMSK0 |= (1 << PCINT3);                                                  //Set PCINT3 (digital input 11)to trigger an interrupt on state change.
+  PCMSK0 |= (1 << PCINT4);                                                  //Set PCINT3 (digital input 12)to trigger an interrupt on state change.
 
 }
 
@@ -187,6 +189,7 @@ void setup_look_for_controller(){
 #endif
       remote_cnt++;
       if (remote_cnt==20){
+        Serial.println("Did not find any remote");
         remote_present=false;                             //We did not find any remote
         state=state_no_receiver;                          //No receivers detected, setting the state to no receivers
       }
@@ -207,7 +210,7 @@ void setup() {
 #endif
 
   setup_mode_and_adress();
-  readPID();                                                                //Read the eprom
+  //readPID();                                                                //Read the eprom
   setup_wire();                                                             //Setup I2C
   setup_configure_pins();                                                   //Setup output pins
 
@@ -255,8 +258,14 @@ Serial.println("Entering main loop");
 #endif
  
  if (state==state_no_receiver) wait_for_receivers();
-loop_timer = micros();                                                      //Set loop_time for first run              
+loop_timer = micros();                                                      //Set loop_time for first run    
+reset_system_pid();
+ digitalWrite(13,LOW);        
 }
+
+
+
+
 
 void loop() {
   // put your main code here, to run repeatedly:
@@ -265,6 +274,7 @@ void loop() {
 
   get_gyro_calculation();
   
+
   
   //Gyro angle calculations
   //0.0000611 = 1 / (250Hz / 65.5)
@@ -292,38 +302,62 @@ void loop() {
   angle_pitch = angle_pitch * 0.9996 + angle_pitch_acc * 0.0004;            //Correct the drift of the gyro pitch angle with the accelerometer pitch angle.
   angle_roll = angle_roll * 0.9996 + angle_roll_acc * 0.0004;               //Correct the drift of the gyro roll angle with the accelerometer roll angle.
 
-  pitch_level_adjust = angle_pitch * 10;                                    //Calculate the pitch angle correction
-  roll_level_adjust = angle_roll * 10;                                      //Calculate the roll angle correction
 
 
-
-
-//PID ajustment
-pid_roll_setpoint = 0;
-pid_roll_setpoint -= roll_level_adjust;                                   //Subtract the angle correction from the standardized receiver roll input value.
-pid_roll_setpoint /= 2.0;                                                 //Divide the setpoint for the PID roll controller by 3 to get angles in degrees.
-
-
-
-pid_pitch_setpoint =0;
  
+
+  pitch_level_adjust = angle_pitch * 20;                                    //Calculate the pitch angle correction
+  roll_level_adjust = angle_roll * 20;                                      //Calculate the roll angle correction
+
+
+
+
+
+
+//The PID set point in degrees per second is determined by the roll receiver input.
+  //In the case of deviding by 3 the max roll rate is aprox 164 degrees per second ( (500-8)/3 = 164d/s ).
+  pid_roll_setpoint = 0;
   //We need a little dead band of 16us for better results.
-  if(receiver_input_channel_1 > 1508)pid_pitch_setpoint = receiver_input_channel_1 - 1508;
-  else if(receiver_input_channel_1 < 1492)pid_pitch_setpoint = receiver_input_channel_1 - 1492;
+  if(receiver_input_channel_1 > 1508)pid_roll_setpoint = (receiver_input_channel_1 - 1508);
+  else if(receiver_input_channel_1 < 1492)pid_roll_setpoint = (receiver_input_channel_1 - 1492);
 
-pid_pitch_setpoint -= pitch_level_adjust;                                  //Subtract the angle correction from the standardized receiver pitch input value.
-pid_pitch_setpoint /= 2.0;                                                 //Divide the setpoint for the PID pitch controller by 3 to get angles in degrees.
+  pid_roll_setpoint -= roll_level_adjust;                                   //Subtract the angle correction from the standardized receiver roll input value.
+  pid_roll_setpoint /= 3.0;                                                 //Divide the setpoint for the PID roll controller by 3 to get angles in degrees.
+ 
 
-pid_yaw_setpoint = 0;
+  //The PID set point in degrees per second is determined by the pitch receiver input.
+  //In the case of deviding by 3 the max pitch rate is aprox 164 degrees per second ( (500-8)/3 = 164d/s ).
+  pid_pitch_setpoint = 0;
+  //We need a little dead band of 16us for better results.
+  if(receiver_input_channel_2 > 1508)pid_pitch_setpoint = (receiver_input_channel_2 - 1508)*-1;
+  else if(receiver_input_channel_2 < 1492)pid_pitch_setpoint = (receiver_input_channel_2 - 1492)*-1;
+
+
+  pid_pitch_setpoint -= pitch_level_adjust;                                  //Subtract the angle correction from the standardized receiver pitch input value.
+  pid_pitch_setpoint /= 3.0;                                                 //Divide the setpoint for the PID pitch controller by 3 to get angles in degrees.
+
+  //The PID set point in degrees per second is determined by the yaw receiver input.
+  //In the case of deviding by 3 the max yaw rate is aprox 164 degrees per second ( (500-8)/3 = 164d/s ).
+  pid_yaw_setpoint = 0;
+  //We need a little dead band of 16us for better results.
+  if(receiver_input_channel_3 > 1050){ //Do not yaw when turning off the motors.
+    if(receiver_input_channel_4 > 1508)pid_yaw_setpoint = (receiver_input_channel_4 - 1508)/3.0;
+    else if(receiver_input_channel_4 < 1492)pid_yaw_setpoint = (receiver_input_channel_4 - 1492)/3.0;
+  }
+
+ 
+
+
+
 calculate_pid(); 
 
 
 
 //Check state mashine
-if (state==state_idle) 
+if ((state==state_idle) || (state==state_stopped))
 {
 wait_for_remote_controll(); //If we are in Idle then we need to wait for the user to perform the correct sequence
-reset_pid();
+reset_system_pid();
 }
 
 //We are now in the loop
@@ -336,11 +370,23 @@ if (state==state_running){
 
 throttle=receiver_input_channel_3;
 if (throttle > 1800) throttle = 1800; 
-  
 
 
-esc_1 = throttle - pid_output_pitch;
-esc_2 = throttle + pid_output_pitch;
+  //esc_1=throttle - pid_output_yaw;
+  //esc_2=throttle + pid_output_yaw;
+  //esc_3=throttle - pid_output_yaw;
+  //esc_4=throttle + pid_output_yaw;
+    
+    
+    esc_1 = throttle - pid_output_pitch + pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 1 (front-right - CCW)
+    esc_2 = throttle + pid_output_pitch + pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 2 (rear-right - CW)
+    esc_3 = throttle + pid_output_pitch - pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 3 (rear-left - CCW)
+    esc_4 = throttle - pid_output_pitch - pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 4 (front-left - CW)
+
+
+//Serial.print(pid_output_pitch);
+//Serial.print("   ");
+//Serial.println(pid_output_roll);
 
 
     if (esc_1 < 1100) esc_1 = 1100;                                         //Keep the motors running.
@@ -375,7 +421,7 @@ print_out++;
 
 
 
-  if(micros() - loop_timer > 4050){digitalWrite(12, HIGH);digitalWrite(13, HIGH);}                   //Turn on the LED if the loop time exceeds 4050us.
+  if(micros() - loop_timer > 4050){digitalWrite(A3, HIGH);digitalWrite(A2, HIGH);digitalWrite(13,HIGH);}                   //Turn on the LED if the loop time exceeds 4050us.
   
 while(micros() - loop_timer < 4000);                                      //We wait until 4000us are passed.
   loop_timer = micros();                                                    //Set the timer for the next loop.
@@ -398,6 +444,8 @@ read_mpu_6050_data();
   }
 
 }
+//End of main loop
+//*******************************************************************************
 
 
 void get_gyro_calculation(){
@@ -405,16 +453,24 @@ void get_gyro_calculation(){
   gyro_y -= gyro_y_cal;                                                //Subtract the offset calibration value from the raw gyro_y value
   gyro_z -= gyro_z_cal;                                                //Subtract the offset calibration value from the raw gyro_z value
   
-  gyro_pitch=gyro_x;                                                   //Set the gyro_pitch to the calibrated value
   gyro_roll=gyro_y;                                                    //Set the gyro_roll to the calibrated value
-  gyro_yaw=gyro_z;                                                     //Set the gyro_yaw to the calibrated value
+  gyro_pitch=gyro_x;                                                   //Set the gyro_pitch to the calibrated value
+  gyro_yaw=gyro_z*-1;                                                     //Set the gyro_yaw to the calibrated value
+
+
 
   
   gyro_roll_input = (gyro_roll_input * 0.7) + ((gyro_roll / 65.5) * 0.3);   //Gyro pid input is deg/sec. gyro_roll_input is calculated using a complementary filter.
   gyro_pitch_input = (gyro_pitch_input * 0.7) + ((gyro_pitch / 65.5) * 0.3);//Gyro pid input is deg/sec. gyro_pitch_input is calculated using a complementary filter.
   gyro_yaw_input = (gyro_yaw_input * 0.7) + ((gyro_yaw / 65.5) * 0.3);      //Gyro pid input is deg/sec. gyro_yaw_input is calculated using a complementary filter.
 
+
 }
+
+
+
+
+
 
 
 void read_mpu_6050_data(){                                             //Subroutine for reading the raw gyro and accelerometer data
@@ -685,14 +741,24 @@ void wait_for_receivers(){
 
 void wait_for_remote_controll(){
 //Lets wait for the user to do the start sequence
+  Serial.println("Waiting for remote");
   
   while(state!=state_running){
+  Serial.print("receiver_input_channel_3=");
+  Serial.print(receiver_input_channel_3 );
+  Serial.print("   receiver_input_channel_4=");
+  Serial.println(receiver_input_channel_4);
   //For starting the motors: throttle low and yaw left (step 1).
   if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 < 1050)start = 1;
   
   //When yaw stick is back in the center position start the motors (step 2).
   if(start == 1 && receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1450){
+   Serial.println("Going to running state");
     state=state_running;
+    angle_pitch = angle_pitch_acc;                                          //Set the gyro pitch angle equal to the accelerometer pitch angle when the quadcopter is started.
+    angle_roll = angle_roll_acc;                                            //Set the gyro roll angle equal to the accelerometer roll angle when the quadcopter is started.
+    digitalWrite(red_pin,LOW);
+    loop_timer = micros();  
   }
  }
 }
@@ -740,8 +806,8 @@ ISR(PCINT0_vect){
 
   }
   //Channel 4=========================================
-  if(PINB & B00001000 ){                                                    //Is input 11 high?
-    if(last_channel_4 == 0){                                                //Input 11 changed from 0 to 1.
+  if(PINB & B00010000 ){                                                    //Is input 12 high?
+    if(last_channel_4 == 0){                                                //Input 12 changed from 0 to 1.
       last_channel_4 = 1;                                                   //Remember current input state.
       timer_4 = current_time;                                               //Set timer_4 to current_time.
     }
