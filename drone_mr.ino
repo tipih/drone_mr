@@ -348,8 +348,8 @@ void loop() {
  
 
 
-
-calculate_pid(); 
+if (throttle>1150) //only do pid calculation if  throttle is more the 1150, this should prevent the pid to start working before we start to gas up 
+ calculate_pid(); 
 
 
 
@@ -372,11 +372,7 @@ throttle=receiver_input_channel_3;
 if (throttle > 1800) throttle = 1800; 
 
 
-  //esc_1=throttle - pid_output_yaw;
-  //esc_2=throttle + pid_output_yaw;
-  //esc_3=throttle - pid_output_yaw;
-  //esc_4=throttle + pid_output_yaw;
-    
+
     
     esc_1 = throttle - pid_output_pitch + pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 1 (front-right - CCW)
     esc_2 = throttle + pid_output_pitch + pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 2 (rear-right - CW)
