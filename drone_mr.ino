@@ -268,7 +268,7 @@ digitalWrite(red_pin,LOW);
 Serial.println("Entering main loop");
 #endif
  
- if (state==state_no_receiver) wait_for_receivers();
+
 
  loop_timer = micros();                                                      //Set loop_time for first run    
  reset_system_pid();
@@ -750,11 +750,7 @@ void stop_engien(){
       state=state_stopped;
     }   
 }
-void wait_for_receivers(){
-  while(1){
-    digitalWrite(red_pin,HIGH);
-  }
-}
+
 
 void wait_for_remote_controll(){
 //Lets wait for the user to do the start sequence
