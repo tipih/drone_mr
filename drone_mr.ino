@@ -1,14 +1,16 @@
 #include <Wire.h>                          //Include the Wire.h library so we can communicate with the gyro.
 #include <EEPROM.h>                        //Include the EEPROM.h library so we can store information onto the EEPROM
 #define flightcontroller
+
 #define enable_serial
+
 #define gyro_adress 0x68
 #define red_pin A3
 #define white_pin 13
 #define red_pin_b   B00010000
 #define pin4_5_6_7_on  B11110000
 #define pin4_5_6_7_off B00001111
-#define pin12_13_on    B00100000
+#define pin13_on    B00100000
 #define low_throttle 1200
 #define throttle_low_min 990
 #define throttle_low_max 1020
@@ -19,6 +21,7 @@
 #define state_lost_receiver 4
 #define state_low_batt 5
 #define state_no_receiver 6
+#define state_about_to_stop 7
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //PID gain and limit settings
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -142,7 +145,7 @@ void setup_wire(){
 void setup_configure_pins(){
   //Arduino (Atmega) pins default to inputs, so they don't need to be explicitly declared as inputs.
   DDRD |= pin4_5_6_7_on;                                                    //Configure digital port 4, 5, 6 and 7 as output.
-  DDRB |= pin12_13_on;                                                      //Configure digital port 12 and 13 as output.
+  DDRB |= pin13_on;                                                      //Configure digital port 12 and 13 as output.
   pinMode(A3,OUTPUT);
   pinMode(A2,OUTPUT);
 }
@@ -189,7 +192,9 @@ void setup_look_for_controller(){
 #endif
       remote_cnt++;
       if (remote_cnt==20){
+       #ifdef enable_serial
         Serial.println("Did not find any remote");
+       #endif 
         remote_present=false;                             //We did not find any remote
         state=state_no_receiver;                          //No receivers detected, setting the state to no receivers
       }
@@ -258,8 +263,9 @@ Serial.println("Entering main loop");
 #endif
  
  if (state==state_no_receiver) wait_for_receivers();
-loop_timer = micros();                                                      //Set loop_time for first run    
-reset_system_pid();
+
+ loop_timer = micros();                                                      //Set loop_time for first run    
+ reset_system_pid();
  digitalWrite(13,LOW);        
 }
 
@@ -356,13 +362,13 @@ if (throttle>1150) //only do pid calculation if  throttle is more the 1150, this
 //Check state mashine
 if ((state==state_idle) || (state==state_stopped))
 {
-wait_for_remote_controll(); //If we are in Idle then we need to wait for the user to perform the correct sequence
-reset_system_pid();
+ wait_for_remote_controll(); //If we are in Idle then we need to wait for the user to perform the correct sequence
+ reset_system_pid();
 }
 
 //We are now in the loop
-//Stopping the motors: throttle low and yaw right.
-if(state == state_running && receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1950)state = state_stopped;
+//Test if we should stop the engien
+stop_engien();
 
 
 
@@ -486,11 +492,15 @@ void read_mpu_6050_data(){                                             //Subrout
 }
 
 void Calibrating(){
+   #ifdef enable_serial 
     Serial.println(" Calibrating gyro");
+   #endif 
      for (int cal_int = 0; cal_int < 2000 ; cal_int ++){                  //Run this code 2000 times
     if(cal_int % 125 == 0)
     {
+   #ifdef enable_serial 
     Serial.print(".");                              //Print a dot on the LCD every 125 readings
+   #endif 
     PINB = PINB | red_pin_b; // toggle D12
    
     }
@@ -503,8 +513,8 @@ void Calibrating(){
   gyro_x_cal /= 2000;                                                  //Divide the gyro_x_cal variable by 2000 to get the avarage offset
   gyro_y_cal /= 2000;                                                  //Divide the gyro_y_cal variable by 2000 to get the avarage offset
   gyro_z_cal /= 2000;                                                  //Divide the gyro_z_cal variable by 2000 to get the avarage offset
+ #ifdef enable_serial 
   Serial.println();
-  
   Serial.print(" Gyro_x =");
   Serial.print(gyro_x_cal);
   Serial.print(" Gyro_y =");//+gyro_y_cal);
@@ -520,6 +530,7 @@ void Calibrating(){
   Serial.print(acc_z);
   Serial.println();
   delay(1000);
+ #endif 
 }
 
 
@@ -641,11 +652,11 @@ void readPID(){
   pid_i_gain_roll=EEPROM_readDouble( baseAddr+4);
   pid_d_gain_roll=EEPROM_readDouble( baseAddr+8);
   //TODO read for pitch and yaw
-
+ #ifdef enable_serial
   Serial.println(pid_p_gain_roll);
   Serial.println(pid_i_gain_roll);
   Serial.println(pid_d_gain_roll);
-  
+ #endif 
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Helper function to write a double to eeprom
@@ -729,6 +740,16 @@ void serial_tuning(){
 }
 #endif
 
+void stop_engien(){
+   //Test if we should stop the engien
+   if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1450 && receiver_input_channel_1 < 1050 && receiver_input_channel_2 > 1450 && state==state_running){
+      state=state_about_to_stop; // Stop state 1 we will wait for the stick to center in before entering top state , this will prevent us from starting again
+    }
+    else
+    if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 < 1450 && receiver_input_channel_1 < 1050 && receiver_input_channel_2 < 1450 && state==state_about_to_stop){
+      state=state_stopped;
+    }   
+}
 void wait_for_receivers(){
   while(1){
     digitalWrite(red_pin,HIGH);
@@ -737,19 +758,24 @@ void wait_for_receivers(){
 
 void wait_for_remote_controll(){
 //Lets wait for the user to do the start sequence
+ #ifdef enable_serial
   Serial.println("Waiting for remote");
-  
+ #endif 
   while(state!=state_running){
+ #ifdef enable_serial
   Serial.print("receiver_input_channel_3=");
   Serial.print(receiver_input_channel_3 );
   Serial.print("   receiver_input_channel_4=");
   Serial.println(receiver_input_channel_4);
+ #endif 
   //For starting the motors: throttle low and yaw left (step 1).
   if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 < 1050)start = 1;
   
   //When yaw stick is back in the center position start the motors (step 2).
   if(start == 1 && receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1450){
+  #ifdef enable_serial 
    Serial.println("Going to running state");
+  #endif  
     state=state_running;
     angle_pitch = angle_pitch_acc;                                          //Set the gyro pitch angle equal to the accelerometer pitch angle when the quadcopter is started.
     angle_roll = angle_roll_acc;                                            //Set the gyro roll angle equal to the accelerometer roll angle when the quadcopter is started.
@@ -758,6 +784,11 @@ void wait_for_remote_controll(){
   }
  }
 }
+
+
+
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //This routine is called every time input 8, 9, 10 or 11 changed state. This is used to read the receiver signals. 
 //More information about this subroutine can be found in this video:
