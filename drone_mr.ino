@@ -287,36 +287,8 @@ void loop() {
   
   //Gyro angle calculations
   //0.0000611 = 1 / (250Hz / 65.5)
-  angle_pitch += gyro_pitch * 0.0000611;                                    //Calculate the traveled pitch angle and add this to the angle_pitch variable.
-  angle_roll += gyro_roll * 0.0000611;                                      //Calculate the traveled roll angle and add this to the angle_roll variable.
-
-  //0.000001066 = 0.0000611 * (3.142(PI) / 180degr) The Arduino sin function is in radians
-  angle_pitch -= angle_roll * sin(gyro_yaw * 0.000001066);                  //If the IMU has yawed transfer the roll angle to the pitch angel.
-  angle_roll += angle_pitch * sin(gyro_yaw * 0.000001066);                  //If the IMU has yawed transfer the pitch angle to the roll angel.
-
-  //Accelerometer angle calculations
-  acc_total_vector = sqrt((acc_x*acc_x)+(acc_y*acc_y)+(acc_z*acc_z));       //Calculate the total accelerometer vector.
-  
-  if(abs(acc_y) < acc_total_vector){                                        //Prevent the asin function to produce a NaN
-    angle_pitch_acc = asin((float)acc_y/acc_total_vector)* 57.296;          //Calculate the pitch angle.
-  }
-  if(abs(acc_x) < acc_total_vector){                                        //Prevent the asin function to produce a NaN
-    angle_roll_acc = asin((float)acc_x/acc_total_vector)* -57.296;          //Calculate the roll angle.
-  }
-
-   //Place the MPU-6050 spirit level and note the values in the following two lines for calibration.
-  angle_pitch_acc -= 0.0;                                                   //Accelerometer calibration value for pitch.
-  angle_roll_acc -= 0.0;                                                    //Accelerometer calibration value for roll.
-  
-  angle_pitch = angle_pitch * 0.9996 + angle_pitch_acc * 0.0004;            //Correct the drift of the gyro pitch angle with the accelerometer pitch angle.
-  angle_roll = angle_roll * 0.9996 + angle_roll_acc * 0.0004;               //Correct the drift of the gyro roll angle with the accelerometer roll angle.
-
-
-  pitch_level_adjust = angle_pitch * angle_pitch_mul;                                    //Calculate the pitch angle correction
-  roll_level_adjust = angle_roll * angle_roll_mul;                                      //Calculate the roll angle correction
-
-
-
+  gyro_angle_calculations();
+ 
 
 
 
@@ -439,6 +411,40 @@ read_mpu_6050_data();
 }
 //End of main loop
 //*******************************************************************************
+
+
+void gyro_angle_calculations(){
+  
+  angle_pitch += gyro_pitch * 0.0000611;                                    //Calculate the traveled pitch angle and add this to the angle_pitch variable.
+  angle_roll += gyro_roll * 0.0000611;                                      //Calculate the traveled roll angle and add this to the angle_roll variable.
+
+  //0.000001066 = 0.0000611 * (3.142(PI) / 180degr) The Arduino sin function is in radians
+  angle_pitch -= angle_roll * sin(gyro_yaw * 0.000001066);                  //If the IMU has yawed transfer the roll angle to the pitch angel.
+  angle_roll += angle_pitch * sin(gyro_yaw * 0.000001066);                  //If the IMU has yawed transfer the pitch angle to the roll angel.
+
+  //Accelerometer angle calculations
+  acc_total_vector = sqrt((acc_x*acc_x)+(acc_y*acc_y)+(acc_z*acc_z));       //Calculate the total accelerometer vector.
+  
+  if(abs(acc_y) < acc_total_vector){                                        //Prevent the asin function to produce a NaN
+    angle_pitch_acc = asin((float)acc_y/acc_total_vector)* 57.296;          //Calculate the pitch angle.
+  }
+  if(abs(acc_x) < acc_total_vector){                                        //Prevent the asin function to produce a NaN
+    angle_roll_acc = asin((float)acc_x/acc_total_vector)* -57.296;          //Calculate the roll angle.
+  }
+
+   //Place the MPU-6050 spirit level and note the values in the following two lines for calibration.
+  angle_pitch_acc -= 0.0;                                                   //Accelerometer calibration value for pitch.
+  angle_roll_acc -= 0.0;                                                    //Accelerometer calibration value for roll.
+  
+  angle_pitch = angle_pitch * 0.9996 + angle_pitch_acc * 0.0004;            //Correct the drift of the gyro pitch angle with the accelerometer pitch angle.
+  angle_roll = angle_roll * 0.9996 + angle_roll_acc * 0.0004;               //Correct the drift of the gyro roll angle with the accelerometer roll angle.
+
+
+  pitch_level_adjust = angle_pitch * angle_pitch_mul;                                    //Calculate the pitch angle correction
+  roll_level_adjust = angle_roll * angle_roll_mul;                                      //Calculate the roll angle correction
+
+
+}
 
 
 void get_gyro_calculation(){
