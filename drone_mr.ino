@@ -169,6 +169,13 @@ void setup_vars() {
     
 }
 
+void pulse_esc(){
+    PORTD |= pin4_5_6_7_on;                                                 //Set digital poort 4, 5, 6 and 7 high.
+    delayMicroseconds(1000);                                                //Wait 1000us.
+    PORTD &= pin4_5_6_7_off;                                                //Set digital poort 4, 5, 6 and 7 low.
+    delayMicroseconds(3000);                                                //Wait 3000us. 
+}
+
 void setup_look_for_controller(){
   int remote_cnt;                                                           //Local var, used to look for remote control 
   remote_present = true;                                                    //Make sure that the remote var is set to true;
@@ -227,11 +234,7 @@ void setup() {
 
   for (cal_int = 0; cal_int < 1250 ; cal_int ++){                           //Wait 5 seconds before continuing.
                                                                             //We pulse the ESC to make them stop beeping
-                                                                            //for the IMU to settel
-    PORTD |= pin4_5_6_7_on;                                                 //Set digital poort 4, 5, 6 and 7 high.
-    delayMicroseconds(1000);                                                //Wait 1000us.
-    PORTD &= pin4_5_6_7_off;                                                //Set digital poort 4, 5, 6 and 7 low.
-    delayMicroseconds(3000);                                                //Wait 3000us.
+    pulse_esc();                                                            //for the IMU to sette
     }
 
   digitalWrite(red_pin,LOW);                                                //Set red_pin off, to indicate that we are finish waiting
@@ -242,8 +245,8 @@ void setup() {
 #ifdef enable_serial
   Serial.println("Calibrating");
 #endif  
-  Calibrating();                                                            //Call calibrate function for the gyro
-  //Now that we have 2000 measures, we need to devide by 2000 to get the average gyro offset.
+  calibrating_gyro();                                                            //Call calibrate function for the gyro, it will take 2000 samples and use this as an offset
+ 
 
   
 
@@ -488,7 +491,7 @@ void read_mpu_6050_data(){                                             //Subrout
 
 }
 
-void Calibrating(){
+void calibrating_gyro(){
    #ifdef enable_serial 
     Serial.println(" Calibrating gyro");
    #endif 
