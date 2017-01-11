@@ -15,6 +15,9 @@
 #define throttle_low_min 990
 #define throttle_low_max 1020
 
+#define angle_pitch_mul 20      // This value will lead to different angels, higher value less angle
+#define angle_roll_mul  20      // This value will lead to different angels, higher value less angle
+
 #define state_idle 1
 #define state_running 2
 #define state_stopped 3
@@ -309,11 +312,8 @@ void loop() {
   angle_roll = angle_roll * 0.9996 + angle_roll_acc * 0.0004;               //Correct the drift of the gyro roll angle with the accelerometer roll angle.
 
 
-
- 
-
-  pitch_level_adjust = angle_pitch * 20;                                    //Calculate the pitch angle correction
-  roll_level_adjust = angle_roll * 20;                                      //Calculate the roll angle correction
+  pitch_level_adjust = angle_pitch * angle_pitch_mul;                                    //Calculate the pitch angle correction
+  roll_level_adjust = angle_roll * angle_roll_mul;                                      //Calculate the roll angle correction
 
 
 
@@ -377,19 +377,10 @@ if (state==state_running){
 throttle=receiver_input_channel_3;
 if (throttle > 1800) throttle = 1800; 
 
-
-
-    
     esc_1 = throttle - pid_output_pitch + pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 1 (front-right - CCW)
     esc_2 = throttle + pid_output_pitch + pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 2 (rear-right - CW)
     esc_3 = throttle + pid_output_pitch - pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 3 (rear-left - CCW)
     esc_4 = throttle - pid_output_pitch - pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 4 (front-left - CW)
-
-
-//Serial.print(pid_output_pitch);
-//Serial.print("   ");
-//Serial.println(pid_output_roll);
-
 
     if (esc_1 < 1100) esc_1 = 1100;                                         //Keep the motors running.
     if (esc_2 < 1100) esc_2 = 1100;                                         //Keep the motors running.
