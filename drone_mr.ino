@@ -282,18 +282,10 @@ Serial.println("Entering main loop");
 void loop() {
   // put your main code here, to run repeatedly:
 
- 
-
   get_gyro_calculation();
-  
-
-  
   //Gyro angle calculations
   //0.0000611 = 1 / (250Hz / 65.5)
   gyro_angle_calculations();
- 
-
-
 
 //The PID set point in degrees per second is determined by the roll receiver input.
   //In the case of deviding by 3 the max roll rate is aprox 164 degrees per second ( (500-8)/3 = 164d/s ).
@@ -744,6 +736,7 @@ void stop_engien(){
    //Test if we should stop the engien
    if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1450 && receiver_input_channel_1 < 1050 && receiver_input_channel_2 > 1450 && state==state_running){
       state=state_about_to_stop; // Stop state 1 we will wait for the stick to center in before entering top state , this will prevent us from starting again
+      digitalWrite(red_pin,HIGH);
     }
     else
     if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 < 1450 && receiver_input_channel_1 < 1050 && receiver_input_channel_2 < 1450 && state==state_about_to_stop){
