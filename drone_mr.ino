@@ -5,8 +5,9 @@
 #define enable_serial
 
 #define gyro_adress 0x68
-#define red_pin A3
-#define white_pin 13
+#define red_pin 13
+#define white_pin A2
+#define color_pin A3
 #define red_pin_b   B00010000
 #define pin4_5_6_7_on  B11110000
 #define pin4_5_6_7_off B00001111
@@ -15,8 +16,8 @@
 #define throttle_low_min 990
 #define throttle_low_max 1020
 
-#define angle_pitch_mul 20      // This value will lead to different angels, higher value less angle
-#define angle_roll_mul  20      // This value will lead to different angels, higher value less angle
+#define angle_pitch_mul 15      // This value will lead to different angels, higher value less angle
+#define angle_roll_mul  15      // This value will lead to different angels, higher value less angle
 
 #define state_idle 1
 #define state_running 2
@@ -322,7 +323,8 @@ void loop() {
 
 
 if (throttle>1150) //only do pid calculation if  throttle is more the 1150, this should prevent the pid to start working before we start to gas up 
- calculate_pid(); 
+ calculate_pid();
+ else reset_system_pid(); 
 
 
 
@@ -335,11 +337,12 @@ if ((state==state_idle) || (state==state_stopped))
 
 //We are now in the loop
 //Test if we should stop the engien
-stop_engien();
+if (state==state_running || state==state_about_to_stop)
+  stop_engien();
 
 
 
-if (state==state_running){
+if (state==state_running || state==state_about_to_stop){
 
 throttle=receiver_input_channel_3;
 if (throttle > 1800) throttle = 1800; 
@@ -376,9 +379,20 @@ if(print_out>20)
 print_out++;
 #endif
 
-
-
-
+#ifdef enable_serial_esc_output
+static byte cnt;
+if (cnt==0){
+  Serial.print("esc1=");
+  Serial.print(esc_1);
+    Serial.print("  esc2=");
+  Serial.print(esc_2);
+    Serial.print("  esc3=");
+  Serial.print(esc_3);
+    Serial.print("  esc4=");
+  Serial.println(esc_4);
+}
+cnt++;
+#endif
 
 
   if(micros() - loop_timer > 4050){digitalWrite(A3, HIGH);digitalWrite(A2, HIGH);digitalWrite(13,HIGH);}                   //Turn on the LED if the loop time exceeds 4050us.
@@ -484,6 +498,7 @@ void read_mpu_6050_data(){                                             //Subrout
 }
 
 void calibrating_gyro(){
+    digitalWrite(color_pin,HIGH);
    #ifdef enable_serial 
     Serial.println(" Calibrating gyro");
    #endif 
@@ -493,7 +508,7 @@ void calibrating_gyro(){
    #ifdef enable_serial 
     Serial.print(".");                              //Print a dot on the LCD every 125 readings
    #endif 
-    PINB = PINB | red_pin_b; // toggle D12
+    
    
     }
     read_mpu_6050_data();                                              //Read the raw acc and gyro data from the MPU-6050
@@ -523,6 +538,7 @@ void calibrating_gyro(){
   Serial.println();
   delay(1000);
  #endif 
+digitalWrite(color_pin,LOW);
 }
 
 
@@ -578,6 +594,9 @@ void reset_system_pid()
     pid_last_pitch_d_error = 0;
     pid_i_mem_yaw = 0;
     pid_last_yaw_d_error = 0;
+    pid_output_pitch=0;
+    pid_output_roll=0;
+    pid_output_yaw=0;
 }
 
 
@@ -732,43 +751,68 @@ void serial_tuning(){
 }
 #endif
 
+
+
+//***********************************************************************************
+//Start and stop handling
 void stop_engien(){
    //Test if we should stop the engien
-   if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1450 && receiver_input_channel_1 < 1050 && receiver_input_channel_2 > 1450 && state==state_running){
+   static byte cnt;
+#ifdef enable_serial_stop_debug
+   if(cnt==0) {
+   Serial.print("Ch1=");
+   Serial.print(receiver_input_channel_1);
+   Serial.print("   Ch2=");
+   Serial.print(receiver_input_channel_2);
+   Serial.print("   Ch3=");
+   Serial.print(receiver_input_channel_3);
+   Serial.print("   Ch4=");
+   Serial.println(receiver_input_channel_4);
+   }
+#endif
+   cnt++;
+   if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1800 && receiver_input_channel_1 < 1050 && receiver_input_channel_2 < 1050 && state==state_running){
       state=state_about_to_stop; // Stop state 1 we will wait for the stick to center in before entering top state , this will prevent us from starting again
-      digitalWrite(red_pin,HIGH);
+      digitalWrite(white_pin,HIGH);
+#ifdef enable_serial_stop_debug      
+      Serial.println("Waiting for stick on normal pos");
+#endif
     }
     else
-    if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 < 1450 && receiver_input_channel_1 < 1050 && receiver_input_channel_2 < 1450 && state==state_about_to_stop){
+    if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1450 && receiver_input_channel_1 > 1450 && receiver_input_channel_2 > 1450 && state==state_about_to_stop){
+#ifdef enable_serial_stop_debug
+      Serial.println("In normal pos change to state_stopped");
+#endif      
       state=state_stopped;
+      start=0;
     }   
 }
 
 
 void wait_for_remote_controll(){
 //Lets wait for the user to do the start sequence
- #ifdef enable_serial
+ #ifdef enable_serial_start_debug
   Serial.println("Waiting for remote");
  #endif 
   while(state!=state_running){
- #ifdef enable_serial
+ #ifdef enable_serial_start_debug
   Serial.print("receiver_input_channel_3=");
   Serial.print(receiver_input_channel_3 );
   Serial.print("   receiver_input_channel_4=");
   Serial.println(receiver_input_channel_4);
  #endif 
   //For starting the motors: throttle low and yaw left (step 1).
-  if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 < 1050)start = 1;
+  if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 < 1050) start = 1;
   
   //When yaw stick is back in the center position start the motors (step 2).
   if(start == 1 && receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1450){
-  #ifdef enable_serial 
+  #ifdef enable_serial_start_debug 
    Serial.println("Going to running state");
   #endif  
     state=state_running;
     angle_pitch = angle_pitch_acc;                                          //Set the gyro pitch angle equal to the accelerometer pitch angle when the quadcopter is started.
     angle_roll = angle_roll_acc;                                            //Set the gyro roll angle equal to the accelerometer roll angle when the quadcopter is started.
-    digitalWrite(red_pin,LOW);
+    digitalWrite(white_pin,LOW);
     loop_timer = micros();  
   }
  }
