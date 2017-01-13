@@ -1,17 +1,23 @@
 #include <Wire.h>                          //Include the Wire.h library so we can communicate with the gyro.
 #include <EEPROM.h>                        //Include the EEPROM.h library so we can store information onto the EEPROM
 #define flightcontroller
+
 #define enable_serial
+
 #define gyro_adress 0x68
-#define red_pin A3
-#define white_pin 13
+#define red_pin 13
+#define white_pin A2
+#define color_pin A3
 #define red_pin_b   B00010000
 #define pin4_5_6_7_on  B11110000
 #define pin4_5_6_7_off B00001111
-#define pin12_13_on    B00100000
+#define pin13_on    B00100000
 #define low_throttle 1200
 #define throttle_low_min 990
 #define throttle_low_max 1020
+
+#define angle_pitch_mul 15      // This value will lead to different angels, higher value less angle
+#define angle_roll_mul  15      // This value will lead to different angels, higher value less angle
 
 #define state_idle 1
 #define state_running 2
@@ -19,6 +25,7 @@
 #define state_lost_receiver 4
 #define state_low_batt 5
 #define state_no_receiver 6
+#define state_about_to_stop 7
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //PID gain and limit settings
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -142,7 +149,7 @@ void setup_wire(){
 void setup_configure_pins(){
   //Arduino (Atmega) pins default to inputs, so they don't need to be explicitly declared as inputs.
   DDRD |= pin4_5_6_7_on;                                                    //Configure digital port 4, 5, 6 and 7 as output.
-  DDRB |= pin12_13_on;                                                      //Configure digital port 12 and 13 as output.
+  DDRB |= pin13_on;                                                      //Configure digital port 12 and 13 as output.
   pinMode(A3,OUTPUT);
   pinMode(A2,OUTPUT);
 }
@@ -161,6 +168,13 @@ void setup_pin_interrupt(){
 void setup_vars() {
      start=0;                                                               //Setup state 0 for startup
     
+}
+
+void pulse_esc(){
+    PORTD |= pin4_5_6_7_on;                                                 //Set digital poort 4, 5, 6 and 7 high.
+    delayMicroseconds(1000);                                                //Wait 1000us.
+    PORTD &= pin4_5_6_7_off;                                                //Set digital poort 4, 5, 6 and 7 low.
+    delayMicroseconds(3000);                                                //Wait 3000us. 
 }
 
 void setup_look_for_controller(){
@@ -189,7 +203,9 @@ void setup_look_for_controller(){
 #endif
       remote_cnt++;
       if (remote_cnt==20){
+       #ifdef enable_serial
         Serial.println("Did not find any remote");
+       #endif 
         remote_present=false;                             //We did not find any remote
         state=state_no_receiver;                          //No receivers detected, setting the state to no receivers
       }
@@ -219,11 +235,7 @@ void setup() {
 
   for (cal_int = 0; cal_int < 1250 ; cal_int ++){                           //Wait 5 seconds before continuing.
                                                                             //We pulse the ESC to make them stop beeping
-                                                                            //for the IMU to settel
-    PORTD |= pin4_5_6_7_on;                                                 //Set digital poort 4, 5, 6 and 7 high.
-    delayMicroseconds(1000);                                                //Wait 1000us.
-    PORTD &= pin4_5_6_7_off;                                                //Set digital poort 4, 5, 6 and 7 low.
-    delayMicroseconds(3000);                                                //Wait 3000us.
+    pulse_esc();                                                            //for the IMU to sette
     }
 
   digitalWrite(red_pin,LOW);                                                //Set red_pin off, to indicate that we are finish waiting
@@ -234,8 +246,8 @@ void setup() {
 #ifdef enable_serial
   Serial.println("Calibrating");
 #endif  
-  Calibrating();                                                            //Call calibrate function for the gyro
-  //Now that we have 2000 measures, we need to devide by 2000 to get the average gyro offset.
+  calibrating_gyro();                                                            //Call calibrate function for the gyro, it will take 2000 samples and use this as an offset
+ 
 
   
 
@@ -257,9 +269,10 @@ digitalWrite(red_pin,LOW);
 Serial.println("Entering main loop");
 #endif
  
- if (state==state_no_receiver) wait_for_receivers();
-loop_timer = micros();                                                      //Set loop_time for first run    
-reset_system_pid();
+
+
+ loop_timer = micros();                                                      //Set loop_time for first run    
+ reset_system_pid();
  digitalWrite(13,LOW);        
 }
 
@@ -270,49 +283,10 @@ reset_system_pid();
 void loop() {
   // put your main code here, to run repeatedly:
 
- 
-
   get_gyro_calculation();
-  
-
-  
   //Gyro angle calculations
   //0.0000611 = 1 / (250Hz / 65.5)
-  angle_pitch += gyro_pitch * 0.0000611;                                    //Calculate the traveled pitch angle and add this to the angle_pitch variable.
-  angle_roll += gyro_roll * 0.0000611;                                      //Calculate the traveled roll angle and add this to the angle_roll variable.
-
-  //0.000001066 = 0.0000611 * (3.142(PI) / 180degr) The Arduino sin function is in radians
-  angle_pitch -= angle_roll * sin(gyro_yaw * 0.000001066);                  //If the IMU has yawed transfer the roll angle to the pitch angel.
-  angle_roll += angle_pitch * sin(gyro_yaw * 0.000001066);                  //If the IMU has yawed transfer the pitch angle to the roll angel.
-
-  //Accelerometer angle calculations
-  acc_total_vector = sqrt((acc_x*acc_x)+(acc_y*acc_y)+(acc_z*acc_z));       //Calculate the total accelerometer vector.
-  
-  if(abs(acc_y) < acc_total_vector){                                        //Prevent the asin function to produce a NaN
-    angle_pitch_acc = asin((float)acc_y/acc_total_vector)* 57.296;          //Calculate the pitch angle.
-  }
-  if(abs(acc_x) < acc_total_vector){                                        //Prevent the asin function to produce a NaN
-    angle_roll_acc = asin((float)acc_x/acc_total_vector)* -57.296;          //Calculate the roll angle.
-  }
-
-   //Place the MPU-6050 spirit level and note the values in the following two lines for calibration.
-  angle_pitch_acc -= 0.0;                                                   //Accelerometer calibration value for pitch.
-  angle_roll_acc -= 0.0;                                                    //Accelerometer calibration value for roll.
-  
-  angle_pitch = angle_pitch * 0.9996 + angle_pitch_acc * 0.0004;            //Correct the drift of the gyro pitch angle with the accelerometer pitch angle.
-  angle_roll = angle_roll * 0.9996 + angle_roll_acc * 0.0004;               //Correct the drift of the gyro roll angle with the accelerometer roll angle.
-
-
-
- 
-
-  pitch_level_adjust = angle_pitch * 20;                                    //Calculate the pitch angle correction
-  roll_level_adjust = angle_roll * 20;                                      //Calculate the roll angle correction
-
-
-
-
-
+  gyro_angle_calculations();
 
 //The PID set point in degrees per second is determined by the roll receiver input.
   //In the case of deviding by 3 the max roll rate is aprox 164 degrees per second ( (500-8)/3 = 164d/s ).
@@ -348,46 +322,35 @@ void loop() {
  
 
 
-
-calculate_pid(); 
+if (throttle>1150) //only do pid calculation if  throttle is more the 1150, this should prevent the pid to start working before we start to gas up 
+ calculate_pid();
+ else reset_system_pid(); 
 
 
 
 //Check state mashine
 if ((state==state_idle) || (state==state_stopped))
 {
-wait_for_remote_controll(); //If we are in Idle then we need to wait for the user to perform the correct sequence
-reset_system_pid();
+ wait_for_remote_controll(); //If we are in Idle then we need to wait for the user to perform the correct sequence
+ reset_system_pid();
 }
 
 //We are now in the loop
-//Stopping the motors: throttle low and yaw right.
-if(state == state_running && receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1950)state = state_stopped;
+//Test if we should stop the engien
+if (state==state_running || state==state_about_to_stop)
+  stop_engien();
 
 
 
-if (state==state_running){
+if (state==state_running || state==state_about_to_stop){
 
 throttle=receiver_input_channel_3;
 if (throttle > 1800) throttle = 1800; 
 
-
-  //esc_1=throttle - pid_output_yaw;
-  //esc_2=throttle + pid_output_yaw;
-  //esc_3=throttle - pid_output_yaw;
-  //esc_4=throttle + pid_output_yaw;
-    
-    
     esc_1 = throttle - pid_output_pitch + pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 1 (front-right - CCW)
     esc_2 = throttle + pid_output_pitch + pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 2 (rear-right - CW)
     esc_3 = throttle + pid_output_pitch - pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 3 (rear-left - CCW)
     esc_4 = throttle - pid_output_pitch - pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 4 (front-left - CW)
-
-
-//Serial.print(pid_output_pitch);
-//Serial.print("   ");
-//Serial.println(pid_output_roll);
-
 
     if (esc_1 < 1100) esc_1 = 1100;                                         //Keep the motors running.
     if (esc_2 < 1100) esc_2 = 1100;                                         //Keep the motors running.
@@ -416,9 +379,20 @@ if(print_out>20)
 print_out++;
 #endif
 
-
-
-
+#ifdef enable_serial_esc_output
+static byte cnt;
+if (cnt==0){
+  Serial.print("esc1=");
+  Serial.print(esc_1);
+    Serial.print("  esc2=");
+  Serial.print(esc_2);
+    Serial.print("  esc3=");
+  Serial.print(esc_3);
+    Serial.print("  esc4=");
+  Serial.println(esc_4);
+}
+cnt++;
+#endif
 
 
   if(micros() - loop_timer > 4050){digitalWrite(A3, HIGH);digitalWrite(A2, HIGH);digitalWrite(13,HIGH);}                   //Turn on the LED if the loop time exceeds 4050us.
@@ -446,6 +420,40 @@ read_mpu_6050_data();
 }
 //End of main loop
 //*******************************************************************************
+
+
+void gyro_angle_calculations(){
+  
+  angle_pitch += gyro_pitch * 0.0000611;                                    //Calculate the traveled pitch angle and add this to the angle_pitch variable.
+  angle_roll += gyro_roll * 0.0000611;                                      //Calculate the traveled roll angle and add this to the angle_roll variable.
+
+  //0.000001066 = 0.0000611 * (3.142(PI) / 180degr) The Arduino sin function is in radians
+  angle_pitch -= angle_roll * sin(gyro_yaw * 0.000001066);                  //If the IMU has yawed transfer the roll angle to the pitch angel.
+  angle_roll += angle_pitch * sin(gyro_yaw * 0.000001066);                  //If the IMU has yawed transfer the pitch angle to the roll angel.
+
+  //Accelerometer angle calculations
+  acc_total_vector = sqrt((acc_x*acc_x)+(acc_y*acc_y)+(acc_z*acc_z));       //Calculate the total accelerometer vector.
+  
+  if(abs(acc_y) < acc_total_vector){                                        //Prevent the asin function to produce a NaN
+    angle_pitch_acc = asin((float)acc_y/acc_total_vector)* 57.296;          //Calculate the pitch angle.
+  }
+  if(abs(acc_x) < acc_total_vector){                                        //Prevent the asin function to produce a NaN
+    angle_roll_acc = asin((float)acc_x/acc_total_vector)* -57.296;          //Calculate the roll angle.
+  }
+
+   //Place the MPU-6050 spirit level and note the values in the following two lines for calibration.
+  angle_pitch_acc -= 0.0;                                                   //Accelerometer calibration value for pitch.
+  angle_roll_acc -= 0.0;                                                    //Accelerometer calibration value for roll.
+  
+  angle_pitch = angle_pitch * 0.9996 + angle_pitch_acc * 0.0004;            //Correct the drift of the gyro pitch angle with the accelerometer pitch angle.
+  angle_roll = angle_roll * 0.9996 + angle_roll_acc * 0.0004;               //Correct the drift of the gyro roll angle with the accelerometer roll angle.
+
+
+  pitch_level_adjust = angle_pitch * angle_pitch_mul;                                    //Calculate the pitch angle correction
+  roll_level_adjust = angle_roll * angle_roll_mul;                                      //Calculate the roll angle correction
+
+
+}
 
 
 void get_gyro_calculation(){
@@ -489,13 +497,18 @@ void read_mpu_6050_data(){                                             //Subrout
 
 }
 
-void Calibrating(){
+void calibrating_gyro(){
+    digitalWrite(color_pin,HIGH);
+   #ifdef enable_serial 
     Serial.println(" Calibrating gyro");
+   #endif 
      for (int cal_int = 0; cal_int < 2000 ; cal_int ++){                  //Run this code 2000 times
     if(cal_int % 125 == 0)
     {
+   #ifdef enable_serial 
     Serial.print(".");                              //Print a dot on the LCD every 125 readings
-    PINB = PINB | red_pin_b; // toggle D12
+   #endif 
+    
    
     }
     read_mpu_6050_data();                                              //Read the raw acc and gyro data from the MPU-6050
@@ -507,8 +520,8 @@ void Calibrating(){
   gyro_x_cal /= 2000;                                                  //Divide the gyro_x_cal variable by 2000 to get the avarage offset
   gyro_y_cal /= 2000;                                                  //Divide the gyro_y_cal variable by 2000 to get the avarage offset
   gyro_z_cal /= 2000;                                                  //Divide the gyro_z_cal variable by 2000 to get the avarage offset
+ #ifdef enable_serial 
   Serial.println();
-  
   Serial.print(" Gyro_x =");
   Serial.print(gyro_x_cal);
   Serial.print(" Gyro_y =");//+gyro_y_cal);
@@ -524,6 +537,8 @@ void Calibrating(){
   Serial.print(acc_z);
   Serial.println();
   delay(1000);
+ #endif 
+digitalWrite(color_pin,LOW);
 }
 
 
@@ -579,6 +594,9 @@ void reset_system_pid()
     pid_last_pitch_d_error = 0;
     pid_i_mem_yaw = 0;
     pid_last_yaw_d_error = 0;
+    pid_output_pitch=0;
+    pid_output_roll=0;
+    pid_output_yaw=0;
 }
 
 
@@ -645,11 +663,11 @@ void readPID(){
   pid_i_gain_roll=EEPROM_readDouble( baseAddr+4);
   pid_d_gain_roll=EEPROM_readDouble( baseAddr+8);
   //TODO read for pitch and yaw
-
+ #ifdef enable_serial
   Serial.println(pid_p_gain_roll);
   Serial.println(pid_i_gain_roll);
   Serial.println(pid_d_gain_roll);
-  
+ #endif 
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Helper function to write a double to eeprom
@@ -733,35 +751,77 @@ void serial_tuning(){
 }
 #endif
 
-void wait_for_receivers(){
-  while(1){
-    digitalWrite(red_pin,HIGH);
-  }
+
+
+//***********************************************************************************
+//Start and stop handling
+void stop_engien(){
+   //Test if we should stop the engien
+   static byte cnt;
+#ifdef enable_serial_stop_debug
+   if(cnt==0) {
+   Serial.print("Ch1=");
+   Serial.print(receiver_input_channel_1);
+   Serial.print("   Ch2=");
+   Serial.print(receiver_input_channel_2);
+   Serial.print("   Ch3=");
+   Serial.print(receiver_input_channel_3);
+   Serial.print("   Ch4=");
+   Serial.println(receiver_input_channel_4);
+   }
+#endif
+   cnt++;
+   if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1800 && receiver_input_channel_1 < 1050 && receiver_input_channel_2 < 1050 && state==state_running){
+      state=state_about_to_stop; // Stop state 1 we will wait for the stick to center in before entering top state , this will prevent us from starting again
+      digitalWrite(white_pin,HIGH);
+#ifdef enable_serial_stop_debug      
+      Serial.println("Waiting for stick on normal pos");
+#endif
+    }
+    else
+    if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1450 && receiver_input_channel_1 > 1450 && receiver_input_channel_2 > 1450 && state==state_about_to_stop){
+#ifdef enable_serial_stop_debug
+      Serial.println("In normal pos change to state_stopped");
+#endif      
+      state=state_stopped;
+      start=0;
+    }   
 }
+
 
 void wait_for_remote_controll(){
 //Lets wait for the user to do the start sequence
+ #ifdef enable_serial_start_debug
   Serial.println("Waiting for remote");
-  
+ #endif 
   while(state!=state_running){
+ #ifdef enable_serial_start_debug
   Serial.print("receiver_input_channel_3=");
   Serial.print(receiver_input_channel_3 );
   Serial.print("   receiver_input_channel_4=");
   Serial.println(receiver_input_channel_4);
+ #endif 
   //For starting the motors: throttle low and yaw left (step 1).
-  if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 < 1050)start = 1;
+  if(receiver_input_channel_3 < 1050 && receiver_input_channel_4 < 1050) start = 1;
   
   //When yaw stick is back in the center position start the motors (step 2).
   if(start == 1 && receiver_input_channel_3 < 1050 && receiver_input_channel_4 > 1450){
+  #ifdef enable_serial_start_debug 
    Serial.println("Going to running state");
+  #endif  
     state=state_running;
     angle_pitch = angle_pitch_acc;                                          //Set the gyro pitch angle equal to the accelerometer pitch angle when the quadcopter is started.
     angle_roll = angle_roll_acc;                                            //Set the gyro roll angle equal to the accelerometer roll angle when the quadcopter is started.
-    digitalWrite(red_pin,LOW);
+    digitalWrite(white_pin,LOW);
     loop_timer = micros();  
   }
  }
 }
+
+
+
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //This routine is called every time input 8, 9, 10 or 11 changed state. This is used to read the receiver signals. 
 //More information about this subroutine can be found in this video:
