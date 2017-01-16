@@ -152,7 +152,7 @@ void setup_wire(){
 void setup_configure_pins(){
   //Arduino (Atmega) pins default to inputs, so they don't need to be explicitly declared as inputs.
   DDRD |= pin4_5_6_7_on;                                                    //Configure digital port 4, 5, 6 and 7 as output.
-  DDRB |= pin13_on;                                                      //Configure digital port 12 and 13 as output.
+  DDRB |= pin13_on;                                                         //Configure digital port 12 and 13 as output.
   pinMode(A3,OUTPUT);
   pinMode(A2,OUTPUT);
 }
