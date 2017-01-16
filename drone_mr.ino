@@ -277,7 +277,7 @@ Serial.println("Entering main loop");
 
  loop_timer = micros();                                                      //Set loop_time for first run    
  reset_system_pid();
- digitalWrite(13,LOW);        
+ digitalWrite(red_pin,LOW);        
 }
 
 
