@@ -3,6 +3,7 @@
 #define flightcontroller
 
 #define enable_serial
+#define enable_serial_esc_output
 
 #define gyro_adress 0x68
 #define red_pin 13
@@ -15,6 +16,8 @@
 #define low_throttle 1200
 #define throttle_low_min 990
 #define throttle_low_max 1020
+
+
 
 #define angle_pitch_mul 15      // This value will lead to different angels, higher value less angle
 #define angle_roll_mul  15      // This value will lead to different angels, higher value less angle
@@ -58,7 +61,7 @@ byte state;
 bool remote_present = false;                //Default value for flight controller is set to false, will be redefined if flightcontroller flag is set
 boolean auto_level = true;                  //Auto level on (true) or off (false)
 int cnt =0;
-
+bool flying = false;
 
 
 //****************************************************************************************************************
@@ -167,6 +170,7 @@ void setup_pin_interrupt(){
 
 void setup_vars() {
      start=0;                                                               //Setup state 0 for startup
+     flying=false;
     
 }
 
@@ -326,6 +330,7 @@ if (throttle>1150) //only do pid calculation if  throttle is more the 1150, this
  calculate_pid();
  else reset_system_pid(); 
 
+if (throttle>1420 && flying==false) flying=true;
 
 
 //Check state mashine
@@ -345,6 +350,12 @@ if (state==state_running || state==state_about_to_stop)
 if (state==state_running || state==state_about_to_stop){
 
 throttle=receiver_input_channel_3;
+if (flying==true && throttle >1050)
+  {
+    if (throttle<1400) throttle=1400;
+  }
+
+
 if (throttle > 1800) throttle = 1800; 
 
     esc_1 = throttle - pid_output_pitch + pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 1 (front-right - CCW)
@@ -352,6 +363,8 @@ if (throttle > 1800) throttle = 1800;
     esc_3 = throttle + pid_output_pitch - pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 3 (rear-left - CCW)
     esc_4 = throttle - pid_output_pitch - pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 4 (front-left - CW)
 
+    
+    
     if (esc_1 < 1100) esc_1 = 1100;                                         //Keep the motors running.
     if (esc_2 < 1100) esc_2 = 1100;                                         //Keep the motors running.
     if (esc_3 < 1100) esc_3 = 1100;                                         //Keep the motors running.
@@ -382,14 +395,8 @@ print_out++;
 #ifdef enable_serial_esc_output
 static byte cnt;
 if (cnt==0){
-  Serial.print("esc1=");
-  Serial.print(esc_1);
-    Serial.print("  esc2=");
-  Serial.print(esc_2);
-    Serial.print("  esc3=");
-  Serial.print(esc_3);
-    Serial.print("  esc4=");
-  Serial.println(esc_4);
+ Serial.print("Throttle=");
+ Serial.println(throttle);
 }
 cnt++;
 #endif
@@ -785,6 +792,7 @@ void stop_engien(){
 #endif      
       state=state_stopped;
       start=0;
+      flying=false;
     }   
 }
 
