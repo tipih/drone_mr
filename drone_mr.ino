@@ -352,7 +352,7 @@ if (state==state_running || state==state_about_to_stop){
 throttle=receiver_input_channel_3;
 if (flying==true && throttle >1050)
   {
-    if (throttle<1400) throttle=1400;
+    if (throttle<1390) throttle=1390;
   }
 
 
