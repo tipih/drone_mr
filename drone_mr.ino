@@ -1,9 +1,10 @@
 #include <Wire.h>                          //Include the Wire.h library so we can communicate with the gyro.
 #include <EEPROM.h>                        //Include the EEPROM.h library so we can store information onto the EEPROM
+#include <FastLED.h>
 #define flightcontroller
 
 #define enable_serial
-#define enable_serial_esc_output
+//#define enable_serial_esc_output
 
 #define gyro_adress 0x68
 #define red_pin 13
@@ -29,6 +30,26 @@
 #define state_low_batt 5
 #define state_no_receiver 6
 #define state_about_to_stop 7
+
+#define LED_PIN     A3
+#define NUM_LEDS    16
+#define BRIGHTNESS  100
+#define LED_TYPE    WS2812
+#define COLOR_ORDER GRB
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//LED stip config
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+CRGB leds[NUM_LEDS];
+int breath = 0;              //variable for red brightness
+int bpmRed = 16;             //variable for breathing speed
+byte ledNumber;
+volatile unsigned long timeSpend =0;
+volatile bool wait=false;
+int gRunningOrder[] = {0,1,2,3};
+// determine how many leds to light
+int gNumLeds = sizeof(gRunningOrder)/sizeof(int);
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //PID gain and limit settings
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -153,8 +174,8 @@ void setup_configure_pins(){
   //Arduino (Atmega) pins default to inputs, so they don't need to be explicitly declared as inputs.
   DDRD |= pin4_5_6_7_on;                                                    //Configure digital port 4, 5, 6 and 7 as output.
   DDRB |= pin13_on;                                                         //Configure digital port 12 and 13 as output.
-  pinMode(A3,OUTPUT);
-  pinMode(A2,OUTPUT);
+  //pinMode(A3,OUTPUT);
+  //pinMode(A2,OUTPUT);
 }
 
 
@@ -172,6 +193,12 @@ void setup_vars() {
      start=0;                                                               //Setup state 0 for startup
      flying=false;
     
+}
+
+void setup_led(){
+    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
+    FastLED.setBrightness(  BRIGHTNESS ); 
+    setAllWhite();
 }
 
 void pulse_esc(){
@@ -197,9 +224,10 @@ void setup_look_for_controller(){
     PORTD |= pin4_5_6_7_on;                                                 //Set digital poort 4, 5, 6 and 7 high.
     delayMicroseconds(1000);                                                //Wait 1000us.
     PORTD &= pin4_5_6_7_off;                                                //Set digital poort 4, 5, 6 and 7 low.
+    setAllBlue();                                                           //Set all strip LED to Blue
     delay(3);                                                               //Wait 3 milliseconds before the next loop.
     if(start == 125){                                                       //Every 125 loops (500ms).
-      digitalWrite(white_pin, !digitalRead(white_pin));                     //Change the led status.
+      //digitalWrite(white_pin, !digitalRead(white_pin));                     //Change the led status.
       start = 0;                                                            //Start again at 0.
 #ifdef enable_serial
        Serial.print("Looking for remote, and Throttle set to min");
@@ -225,6 +253,8 @@ void setup_look_for_controller(){
 void setup() {
   // put your setup code here, to run once:
 
+
+
 #ifdef enable_serial
   setup_serial();
 #endif
@@ -234,16 +264,21 @@ void setup() {
   setup_wire();                                                             //Setup I2C
   setup_configure_pins();                                                   //Setup output pins
 
-  digitalWrite(red_pin,HIGH);                                               //Set red pin high, to indicate that program is starting 
-  set_gyro_registers();                                                     //Set the specific gyro registers.
+  setup_led();
 
+  
+  
+  
+  //digitalWrite(red_pin,HIGH);                                               //Set red pin high, to indicate that program is starting 
+  set_gyro_registers();                                                     //Set the specific gyro registers.
+  setAllBlue();
   for (cal_int = 0; cal_int < 1250 ; cal_int ++){                           //Wait 5 seconds before continuing.
                                                                             //We pulse the ESC to make them stop beeping
     pulse_esc();                                                            //for the IMU to sette
     }
 
-  digitalWrite(red_pin,LOW);                                                //Set red_pin off, to indicate that we are finish waiting
-
+  //digitalWrite(red_pin,LOW);                                                //Set red_pin off, to indicate that we are finish waiting
+  
   
   
   //Let's take multiple gyro data samples so we can determine the average gyro offset (calibration).
@@ -256,7 +291,7 @@ void setup() {
   
 
 
-digitalWrite(red_pin,LOW);                                                  //Set red_pin to low, pin has been used inside the calibrating routine 
+//digitalWrite(red_pin,LOW);                                                  //Set red_pin to low, pin has been used inside the calibrating routine 
 print_out=0;                                                                //Set print out to 0 used for serial output
 throttle=low_throttle;                                                      //Setup throttle to 1200
 
@@ -268,7 +303,7 @@ setup_look_for_controller();                                                //Lo
 #endif
 
 reset_system_pid();                                                         //Reset the PID controller
-digitalWrite(red_pin,LOW);
+//digitalWrite(red_pin,LOW);
 #ifdef enable_serial
 Serial.println("Entering main loop");
 #endif
@@ -277,9 +312,71 @@ Serial.println("Entering main loop");
 
  loop_timer = micros();                                                      //Set loop_time for first run    
  reset_system_pid();
- digitalWrite(red_pin,LOW);        
+ setAllGreen();
+ timeSpend=millis(); 
+
+
 }
 
+void turnOnGreen(){
+  
+ FastLED.clear();
+ fill_solid( leds, NUM_LEDS, CRGB(0,200,0));
+ FastLED.show(); 
+
+}
+
+
+void blinkLed()
+{
+  
+  if(wait==false){
+    
+   if(ledNumber < gNumLeds-1) ledNumber++;
+   else
+    ledNumber=0;
+   
+   //Serial.print(ledNumber);
+   runningLightON(ledNumber);
+   wait=true;
+   timeSpend=millis();
+   }
+
+if(millis()-timeSpend > 100) {
+    wait=false;
+    runnigLightOff();
+    //Serial.println("Test");  
+   }
+}
+
+
+void runningLightON(int ledNumber){
+ 
+        // Turn our current led ON, then show the leds
+        leds[gRunningOrder[ledNumber]] = CRGB::Red;
+        leds[gRunningOrder[ledNumber]+4] = CRGB::Red;
+        leds[gRunningOrder[ledNumber]+8] = CRGB::White;
+        leds[gRunningOrder[ledNumber]+12] = CRGB::White;
+        
+ 
+        // Show the leds (only one of which is has a color set, from above
+        // Show turns actually turns on the LEDs
+        FastLED.show();
+ 
+        // Wait a little bit - this will dictate speed  
+}
+
+
+void runnigLightOff(){
+
+      // this will leave a tail
+        fadeToBlackBy( leds, NUM_LEDS/4, 200);
+        fadeToBlackBy( leds+4, NUM_LEDS/4, 200);
+        fadeToBlackBy( leds+8, NUM_LEDS/4, 200);
+        fadeToBlackBy( leds+12, NUM_LEDS/4, 200);
+        //or un comment this to turn the leds off quickly, not leaving tail
+        //leds[gRunningOrder[ledNumber]] = CRGB::Black;     
+}
 
 
 
@@ -330,6 +427,8 @@ if (throttle>1150) //only do pid calculation if  throttle is more the 1150, this
  calculate_pid();
  else reset_system_pid(); 
 
+
+//let's set the flying flag, now we should be in the air
 if (throttle>1420 && flying==false) flying=true;
 
 
@@ -353,6 +452,7 @@ throttle=receiver_input_channel_3;
 if (flying==true && throttle >1050)
   {
     if (throttle<1390) throttle=1390;
+    blinkLed();
   }
 
 
@@ -402,7 +502,8 @@ cnt++;
 #endif
 
 
-  if(micros() - loop_timer > 4050){digitalWrite(A3, HIGH);digitalWrite(A2, HIGH);digitalWrite(13,HIGH);}                   //Turn on the LED if the loop time exceeds 4050us.
+  if(micros() - loop_timer > 4050){setAllRed();}                   //Turn on the LED if the loop time exceeds 4050us.
+  
   
 while(micros() - loop_timer < 4000);                                      //We wait until 4000us are passed.
   loop_timer = micros();                                                    //Set the timer for the next loop.
@@ -799,6 +900,7 @@ void stop_engien(){
 
 void wait_for_remote_controll(){
 //Lets wait for the user to do the start sequence
+ setAllGreen();
  #ifdef enable_serial_start_debug
   Serial.println("Waiting for remote");
  #endif 
@@ -820,12 +922,65 @@ void wait_for_remote_controll(){
     state=state_running;
     angle_pitch = angle_pitch_acc;                                          //Set the gyro pitch angle equal to the accelerometer pitch angle when the quadcopter is started.
     angle_roll = angle_roll_acc;                                            //Set the gyro roll angle equal to the accelerometer roll angle when the quadcopter is started.
-    digitalWrite(white_pin,LOW);
+    standardLedSetup();
     loop_timer = micros();  
   }
  }
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//LED SECTION
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+void turnOffLED(){
+  
+FastLED.clear();
+fill_solid( leds, NUM_LEDS, CRGB(0,0,0));
+FastLED.show(); 
+}
+
+void setAllYellow(){
+ FastLED.clear();
+ fill_solid( leds, NUM_LEDS, CRGB(255,255,0));
+ FastLED.show(); 
+ Serial.println("Set all led to yellow"); 
+}
+void setAllWhite(){
+   FastLED.clear();
+ fill_solid( leds, NUM_LEDS, CRGB(255,255,255));
+ FastLED.show();
+}
+void setAllGreen(){
+ FastLED.clear();
+ fill_solid( leds, NUM_LEDS, CRGB(0,255,0));
+ FastLED.show(); 
+}
+
+void setAllBlue(){
+ FastLED.clear();
+ fill_solid( leds, NUM_LEDS, CRGB(0,0,255));
+ FastLED.show(); 
+}
+
+
+void setAllRed(){
+ FastLED.clear();
+ fill_solid( leds, NUM_LEDS, CRGB(255,0,0));
+ FastLED.show(); 
+}
+
+
+
+void standardLedSetup(){
+  byte a;
+  for (a=0;a<8;a++){
+    leds[a] = CRGB::Red;
+    leds[a+8] = CRGB::White; 
+  }
+  FastLED.show();
+}
 
 
 

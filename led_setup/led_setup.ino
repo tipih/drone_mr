@@ -3,7 +3,7 @@
 #include <FastLED.h>
 
 
-#define LED_PIN     6
+#define LED_PIN     A3
 #define NUM_LEDS    16
 #define BRIGHTNESS  100
 #define LED_TYPE    WS2812
@@ -23,7 +23,9 @@ void setup() {
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
     FastLED.setBrightness(  BRIGHTNESS ); 
     //standardLedSetup();
-
+setAllYellow();
+runningLight();
+delay(3000);
      timeSpend=millis(); 
     
     
@@ -34,7 +36,14 @@ void loop() {
 
 
  
-if(wait==false){
+runningLight();
+   
+}
+
+
+
+void runningLight(){
+  if(wait==false){
    if(ledNumber < gNumLeds-1) ledNumber++;
    else
     ledNumber=0;
@@ -48,9 +57,7 @@ if(millis()-timeSpend > 50) {
     wait=false;
     runnigLightOff();  
    }
-   
 }
-
 
 void runningLightON(int ledNumber){
  
